@@ -1,36 +1,108 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+### SIMPLE GUÍA DE AUTH PARA NEXTJS - FINES EDUCATIVOS
 
-## Getting Started
+Para configurar la autenticación con Auth.js se deben seguir estos pasos
 
-First, run the development server:
+1- Instalar Auth.js
+`pnpm add next-auth@beta`
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+2- La única variable mandataria es AUTH_SECRET, es un valor random usado por la librería para encriptar tokens, etc.
+`npx auth secret` o crear un env AUTH_SECRET
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3- Hay que crear un objeto de configuración, en un archivo en el root de la aplicación que se llama "auth.ts", aquí es donde controlaremos autenticaciones, lógica, etc.
+De este archivo se exportaran los manejadores de rutas, métodos de signIn y signOut, y mas. Ejemplo de contenido del archivo.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+    import NextAuth from "next-auth"
+    
+    export const { handlers, signIn, signOut, auth } = NextAuth({
+    providers: [],
+    })
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4- El siguiente paso es crear el manejador de rutas, este se debe crear en esta ruta.
+`/app/api/auth/[...nextauth]/route.ts` donde se coloca el siguiente código que exporta los métodos GET y POST de handlers.
 
-## Learn More
+    import { handlers } from "../../../../../auth";
 
-To learn more about Next.js, take a look at the following resources:
+    export const { GET, POST } = handlers
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+5- Una vez finalizadas estas configuraciones, dentro de auth.ts, tenemos acceso a otro objeto ademas de providers, este es callbacks, donde podemos ejecutar funciones asíncronas y acceder a la cuenta, el perfil, y hacer lógica extra. Un ejemplo de utilización.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+    import NextAuth from "next-auth";
+    import GoogleProvider from "next-auth/providers/google";
 
-## Deploy on Vercel
+    export const { handlers, signIn, signOut, auth } = NextAuth({
+    providers: [
+        GoogleProvider({
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        }),
+    ],
+    callbacks: {
+        async signIn({ account, profile }) {
+        console.log(account);
+        console.log(profile);
+        return true;
+        },
+    },
+    });
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+6- Luego, para consumir la session desde el el back, solo se debe importar auth desde el archivo de configuración y guardarlo en una variable. Ejemplo de código. Aquí tendremos toda la info brindada por el provider.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+    import { LoginButton } from "@/components/LoginButton";
+    import { auth } from "../../auth";
+
+    export default async  function Home() {
+
+    const session = await auth()
+    console.log(session, "from home")
+
+    return (
+        <div className="flex justify-center py-4 h-full items-center">
+        <LoginButton />
+        </div>
+    );
+    }
+
+7- Podemos manejar redirects dentro de la función de signIn directamente, en caso de ser exitoso ir a rutas protegidas. Ejemplo.
+
+    "use client";
+
+    import { signIn } from "next-auth/react";
+
+    export function LoginButton() {
+    const handleLogin = () => {
+        signIn("google", { redirectTo: "/private-pages" });
+    };
+
+    //   const handleLogout = () => {
+    //     signOut();
+    //   };
+
+    return (
+        <button
+        onClick={handleLogin}
+        className="p-2 border border-white rounded-sm hover:bg-black transition-colors duration-300"
+        >
+        LOGIN
+        </button>
+    );
+    }
+
+8- Para proteger un set de rutas, next nos brinda varias soluciones, las mas sencillas radican en hacer una simple verificación de "if(!session)redirect", pero una solución mas elegante que tenemos es la de crear un archivo middleware en el root de la aplicación con el siguiente código.
+
+`export { auth as middleware } from "./auth"`
+
+o podemos hacer lógica mas interesante como este middleware
+
+    import { NextResponse, type NextRequest } from "next/server";
+    import { auth } from "../auth";
+
+    // const publicPages = [];
+
+    export async function middleware(request: NextRequest) {
+    const session = await auth();
+
+    if (!session && request.nextUrl.pathname.startsWith("/private")) {
+        return NextResponse.redirect(new URL('/', request.url));
+    }
+    }
+
